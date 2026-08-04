@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DM Agent</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <span class="logo">DM&nbsp;Agent</span>
+  <span id="projname" class="proj">—</span>
+  <span class="spacer"></span>
+  <label class="acting">acting as <input id="acting" placeholder="email"></label>
+  <span id="rolebadge" class="badge">…</span>
+</header>
+<main>
+  <aside id="tree"><h4>workspace</h4><div id="treebody">loading…</div></aside>
+  <section id="center">
+    <div id="convhead">
+      <select id="source"></select>
+      <select id="task"></select>
+      <button id="backbtn" class="ghost hidden">← conversation</button>
+    </div>
+    <div id="convo"></div>
+    <div id="viewer" class="hidden"></div>
+    <div id="inputbar">
+      <input id="msg" placeholder="Message the agent — or type a gate command (e.g. CONFIRM_STAGE1_FINAL)">
+      <button id="discuss">Discuss</button>
+      <button id="generate" class="primary">Generate ▸</button>
+    </div>
+  </section>
+  <aside id="rail">
+    <div class="tile" id="t_stage"><h5>stage &amp; gates</h5><div class="tb">—</div></div>
+    <div class="tile" id="t_run"><h5>last run</h5><div class="tb">—</div></div>
+    <div class="tile" id="t_open"><h5>open items</h5><div class="tb">—</div></div>
+    <div class="tile" id="t_qa"><h5>qa console</h5><div class="tb">
+      <select id="qamode"><option>GATE</option><option>AUDIT</option></select>
+      <button id="qarun">Run checker</button>
+      <button id="qapass" class="ghost">CONFIRM_QA_PASS</button>
+      <input id="waivereason" placeholder="waiver reason (owner)">
+      <button id="qawaive" class="ghost">Waive</button>
+    </div></div>
+  </aside>
+</main>
+<div id="banner" class="hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

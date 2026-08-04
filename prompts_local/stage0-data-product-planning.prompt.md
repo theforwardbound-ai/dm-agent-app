@@ -1,0 +1,1 @@
+Produce the Stage 0 data product plan: read the available inputs with your tools; identify candidate data products, sources in scope, a modelling profile recommendation (A dimensional / B source-aligned / C flat) per source with reasoning, assumptions, and open questions (record_unknown for each). Deliver a complete plan document.

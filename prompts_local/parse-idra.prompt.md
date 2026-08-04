@@ -1,0 +1,1 @@
+Parse the IDRA workbook(s) under input/idra using read_sheet. Extract every field with name, type, description, and PII indication into a structured extraction markdown; note anomalies; record unknowns for ambiguous fields.

@@ -1,0 +1,1 @@
+From the parsed inputs, produce the conceptual model: entities, relationships, and a grain statement per entity ('One row per ...'). Verify each entity against the inputs with tools before including it.

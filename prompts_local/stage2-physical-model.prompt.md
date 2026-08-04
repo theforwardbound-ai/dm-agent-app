@@ -1,0 +1,1 @@
+Produce the physical model for the confirmed conceptual design: tables, columns with types and nullability, primary keys, privacy classification per column, and source-field mapping. Verify against inputs. End with the MODEL_SPEC block exactly as the system prompt specifies.
