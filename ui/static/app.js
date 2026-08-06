@@ -187,11 +187,17 @@ function addMsg(role, content) {
   $("convo").scrollTop = $("convo").scrollHeight;
 }
 async function send(chat) {
-  const msg = $("msg").value.trim();
+  let msg = $("msg").value.trim();
+  if (msg.startsWith("/") && STATUS) {
+    const head = msg.split(/\s+/)[0];
+    const hit = Object.entries(STATUS.tasks)
+      .find(([k, v]) => v.slash === head);
+    if (hit) { $("task").value = hit[0]; msg = msg.slice(head.length).trim(); }
+  }
   if (!msg && chat) return;
   $("discuss").disabled = $("generate").disabled = true;
   try {
-    if (msg) addMsg("user", msg);
+    if (msg) addMsg("user", msg); else addMsg("user", $("msg").value.trim());
     const r = await api("/api/send", {method: "POST", body: JSON.stringify({
       source: $("source").value || null, task: $("task").value,
       message: msg, chat})});

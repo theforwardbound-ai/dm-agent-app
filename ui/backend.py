@@ -138,6 +138,11 @@ class LocalBackend:
                            comment=comment)
             return {"kind": "gate", "gate": g,
                     "effect": gates.GATE_EFFECTS[g]}
+        msg = (message or "").strip()
+        if msg.startswith("/"):
+            head, _, rest = msg.partition(" ")
+            task_type = tasks.resolve(head)
+            message = rest.strip()
         r = runner.run_task(pid, task_type, self.user, source_id=source_id,
                             user_message=message, chat=chat, llm=llm)
         return {"kind": "run", **r}
