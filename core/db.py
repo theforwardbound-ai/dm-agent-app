@@ -3,7 +3,7 @@ DuckDB locally; Lakebase Postgres on Databricks (psycopg, lazy import,
 auto-credential via SDK when DM_LAKEBASE_INSTANCE is set).
 Rules: '?' placeholders only (converted to %s for pg); NO literal '?'
 inside SQL strings; ids and timestamps generated app-side."""
-import threading, datetime as dt
+import os, threading, datetime as dt
 from core import config
 
 _lock = threading.Lock()
@@ -13,6 +13,17 @@ _kind = None
 def _connect():
     global _conn, _kind
     url = config.DATABASE_URL
+    if os.getenv("PGHOST"):        # injected by an attached DB resource
+        _kind = "pg"
+        import psycopg
+        _conn = psycopg.connect(host=os.environ["PGHOST"],
+                                port=int(os.getenv("PGPORT", "5432")),
+                                dbname=os.getenv("PGDATABASE", "databricks_postgres"),
+                                user=os.getenv("PGUSER"),
+                                password=os.getenv("PGPASSWORD"),
+                                sslmode=os.getenv("PGSSLMODE", "require"),
+                                autocommit=False)
+        return _conn
     if config.LAKEBASE_INSTANCE:
         _kind = "pg"
         from databricks.sdk import WorkspaceClient          # platform only

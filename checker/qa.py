@@ -80,6 +80,13 @@ def run_qa(pid, user, mode="GATE", source_id=None, artifact=None) -> dict:
 
 def confirm_pass(pid, source_id, user) -> dict:
     state.require_member(pid, user, "EDITOR")
+    qa_runs = [r for r in state.list_runs(pid, limit=200)
+               if str(r.get("task_type", "")).startswith("qa_")
+               and r.get("status") == "SUCCEEDED"
+               and r.get("source_id") == source_id]
+    if not qa_runs:
+        raise state.Conflict("no checker run on record for this source - "
+                             "run the checker (RUN_QA_GATE) before sign-off")
     open_blocking = [d for d in state.list_defects(pid, source_id, "OPEN")
                      if d["severity"] in BLOCKING]
     if open_blocking:

@@ -8,7 +8,7 @@ def _env(k, d=None):
     v = os.getenv(k, d)
     return v if v not in ("", None) else d
 
-AGENT_VERSION   = _env("DM_AGENT_VERSION", "0.2.0-freeedition")
+AGENT_VERSION   = _env("DM_AGENT_VERSION", "0.2.1-freeedition")
 
 CATALOG         = _env("DM_CATALOG", "workspace")          # Free Edition default catalog
 SCHEMA          = _env("DM_SCHEMA", "dm_agent")
