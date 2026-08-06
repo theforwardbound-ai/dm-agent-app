@@ -130,10 +130,20 @@ class H(BaseHTTPRequestHandler):
         pass
 
 def main():
-    state.init_db()
+    dbk = ("lakebase" if config.LAKEBASE_INSTANCE else
+           "postgres" if config.DATABASE_URL.startswith("postgres") else "duckdb")
+    print(f"boot: port={config.SERVER_PORT} db={dbk} "
+          f"volume={'set' if not config.LOCAL_FS_ROOT else 'local-fs'} "
+          f"fake_llm={config.FAKE_LLM}", flush=True)
+    try:
+        state.init_db()
+        print("db init: OK", flush=True)
+    except Exception as e:
+        print(f"db init FAILED (serving anyway; /healthz reports): {e}",
+              flush=True)
     srv = ThreadingHTTPServer(("0.0.0.0", config.SERVER_PORT), H)
     print(f"dm-agent listening on 0.0.0.0:{config.SERVER_PORT} "
-          f"(version {config.AGENT_VERSION})")
+          f"(version {config.AGENT_VERSION})", flush=True)
     srv.serve_forever()
 
 if __name__ == "__main__":

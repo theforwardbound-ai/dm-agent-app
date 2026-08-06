@@ -20,6 +20,20 @@
       <select id="task"></select>
       <button id="backbtn" class="ghost hidden">← conversation</button>
     </div>
+    <div id="newproj" class="hidden">
+      <h3 style="margin:14px">Create your first work item</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:420px;margin:0 14px">
+        <input id="np_name" placeholder="Name (e.g. Synthetic Card Vault)">
+        <input id="np_tenant" placeholder="Tenant — the owning application team (required)">
+        <input id="np_source" placeholder="First source id (e.g. RCB)">
+        <select id="np_profile"><option value="B">Profile B — source-aligned</option>
+          <option value="A">Profile A — dimensional</option>
+          <option value="C">Profile C — flat</option></select>
+        <button id="np_create" class="primary">Create work item</button>
+        <div class="hint">A product belongs to exactly one tenant. Files land in the
+        project workspace; on this platform they persist once a volume is wired.</div>
+      </div>
+    </div>
     <div id="convo"></div>
     <div id="viewer" class="hidden"></div>
     <div id="inputbar">

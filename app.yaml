@@ -1,1 +1,4 @@
 command: ["python", "-m", "ui.server"]
+env:
+  - name: "PYTHONUNBUFFERED"
+    value: "1"

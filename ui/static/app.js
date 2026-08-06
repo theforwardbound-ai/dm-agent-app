@@ -43,10 +43,20 @@ function stageForTask(t) {
 }
 async function refreshStatus() {
   STATUS = await api("/api/status");
+  if (STATUS.user && !acting()) {
+    $("acting").placeholder = STATUS.user + " (platform identity)";
+  }
+  if (STATUS.role) $("rolebadge").textContent = STATUS.role.toUpperCase();
   if (!STATUS.project) {
-    $("projname").textContent = "no project — create one via smoke script";
+    $("projname").textContent = "no work item yet";
+    $("newproj").classList.remove("hidden");
+    $("convo").classList.add("hidden");
+    $("inputbar").classList.add("hidden");
     return;
   }
+  $("newproj").classList.add("hidden");
+  $("convo").classList.remove("hidden");
+  $("inputbar").classList.remove("hidden");
   $("projname").textContent =
     `${STATUS.project.name}  ·  tenant ${STATUS.project.tenant}`;
   $("rolebadge").textContent = STATUS.role.toUpperCase();
@@ -236,6 +246,23 @@ $("qawaive").onclick = async () => {
     $("waivereason").value = "";
     refreshStatus();
   } catch (e) {}
+};
+
+/* ---------- first-run create ---------- */
+$("np_create").onclick = async () => {
+  $("np_create").disabled = true;
+  try {
+    await api("/api/project", {method: "POST", body: JSON.stringify({
+      name: $("np_name").value.trim(),
+      tenant: $("np_tenant").value.trim(),
+      primary_input_type: "IDRA", dp_type: "SADP",
+      target_catalog: "workspace", schema_naming: "dm_demo"})});
+    const sid = $("np_source").value.trim() || "SRC1";
+    await api("/api/source", {method: "POST", body: JSON.stringify({
+      source_id: sid, modelling_profile: $("np_profile").value})});
+    await boot();
+  } catch (e) {}
+  $("np_create").disabled = false;
 };
 
 /* ---------- boot ---------- */

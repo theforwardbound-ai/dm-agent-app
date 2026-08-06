@@ -12,12 +12,14 @@ AGENT_VERSION   = _env("DM_AGENT_VERSION", "0.2.0-freeedition")
 
 CATALOG         = _env("DM_CATALOG", "workspace")          # Free Edition default catalog
 SCHEMA          = _env("DM_SCHEMA", "dm_agent")
-FILES_VOLUME    = _env("DM_FILES_VOLUME", f"/Volumes/{CATALOG}/{SCHEMA}/files")
+FILES_VOLUME    = _env("DM_FILES_VOLUME")            # explicit opt-in
 
-DATABASE_URL    = _env("DM_DATABASE_URL", "duckdb:///./dm_dev.duckdb")
+DATABASE_URL    = _env("DM_DATABASE_URL", "duckdb:////tmp/dm_dev.duckdb")
 LAKEBASE_INSTANCE = _env("DM_LAKEBASE_INSTANCE")           # set on platform -> auto-cred
 
-LOCAL_FS_ROOT   = _env("DM_LOCAL_FS_ROOT")                 # set -> local disk, not volume
+LOCAL_FS_ROOT   = _env("DM_LOCAL_FS_ROOT")
+if not LOCAL_FS_ROOT and not FILES_VOLUME:
+    LOCAL_FS_ROOT = "/tmp/dm_workspace"   # first-light store (ephemeral)
 PROMPT_DIR      = _env("DM_PROMPT_DIR", "./prompts_local")
 
 MODEL_FRONTIER  = _env("DM_MODEL_FRONTIER", "databricks-claude-opus-4-8")

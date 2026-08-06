@@ -59,7 +59,8 @@ class LocalBackend:
         """The single call the minimal UI paints from."""
         proj = state.active_project(self.user)
         if not proj:
-            return {"project": None}
+            return {"project": None, "user": self.user,
+                    "role": self.role()}
         pid = proj["project_id"]
         state.require_member(pid, self.user)
         srcs = state.sources(pid)
@@ -73,7 +74,7 @@ class LocalBackend:
                 "next_gate": gates.next_gate(s, g)})
         runs = state.list_runs(pid, limit=1)
         return {"project": {k: str(v) for k, v in proj.items()},
-                "role": self.role(),
+                "user": self.user, "role": self.role(),
                 "sources": out_sources,
                 "tasks": {k: {"slash": f"/{k.replace('_','-')}",
                               "mode": v.mode, "per_source": v.per_source,
