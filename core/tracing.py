@@ -24,11 +24,26 @@ def enabled() -> bool:
         _ENABLED = False
     return _ENABLED
 
+class _safe:
+    def __init__(self, maker): self.maker = maker; self.cm = None
+    def __enter__(self):
+        try:
+            self.cm = self.maker()
+            return self.cm.__enter__()
+        except Exception:
+            self.cm = None; return None
+    def __exit__(self, *a):
+        try:
+            if self.cm: return self.cm.__exit__(*a)
+        except Exception:
+            pass
+        return False
+
 def span(name: str, attributes: dict | None = None):
     if not enabled():
         return contextlib.nullcontext()
     import mlflow
-    return mlflow.start_span(name=name, attributes=attributes or {})
+    return _safe(lambda: mlflow.start_span(name=name, attributes=attributes or {}))
 
 def current_trace_id() -> str | None:
     if not enabled():

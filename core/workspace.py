@@ -50,7 +50,12 @@ class ProjectWorkspace:
             fp = pathlib.Path(p); fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_bytes(data)
         else:
-            self._sdk().files.upload(p, io.BytesIO(data), overwrite=True)
+            w = self._sdk()
+            try:
+                w.files.create_directory(p.rsplit("/", 1)[0])
+            except Exception:
+                pass
+            w.files.upload(p, io.BytesIO(data), overwrite=True)
         return p
 
     def download(self, rel: str) -> bytes:
