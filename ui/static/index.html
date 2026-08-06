@@ -7,7 +7,7 @@
 <body>
 <header>
   <span class="logo">DM&nbsp;Agent</span>
-  <span id="projname" class="proj">—</span>
+  <button id="newbtn" class="ghost" style="order:9">+ new</button><span id="projname" class="proj">—</span>
   <span class="spacer"></span>
   <label class="acting">acting as <input id="acting" placeholder="email"></label>
   <span id="rolebadge" class="badge">…</span>
@@ -30,6 +30,7 @@
           <option value="A">Profile A — dimensional</option>
           <option value="C">Profile C — flat</option></select>
         <button id="np_create" class="primary">Create work item</button>
+        <button id="np_cancel" class="ghost">cancel</button>
         <div class="hint">A product belongs to exactly one tenant. Files land in the
         project workspace; on this platform they persist once a volume is wired.</div>
       </div>

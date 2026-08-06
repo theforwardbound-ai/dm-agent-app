@@ -277,6 +277,14 @@ $("np_create").onclick = async () => {
   $("np_create").disabled = false;
 };
 
+$("newbtn").onclick = () => {
+  $("newproj").classList.remove("hidden");
+  $("viewer").classList.add("hidden");
+  $("convo").classList.add("hidden");
+  $("inputbar").classList.add("hidden");
+};
+$("np_cancel").onclick = () => boot();
+
 /* ---------- boot ---------- */
 $("acting").value = acting();
 $("acting").addEventListener("change", () => {
