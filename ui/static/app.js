@@ -210,7 +210,7 @@ async function send(chat) {
     }
     $("msg").value = "";
     await Promise.all([refreshStatus(), refreshTree()]);
-  } catch (e) { /* banner already shown */ }
+  } catch (e) { if (e && e.message) addMsg("system", "BLOCKED: " + e.message); }
   $("discuss").disabled = $("generate").disabled = false;
 }
 $("discuss").onclick = () => send(true);
@@ -232,7 +232,7 @@ $("qarun").onclick = async () => {
            (r.report_path ? `\nreport: ${r.report_path}` : "") +
            (r.detail ? `\n${r.detail}` : ""));
     await Promise.all([refreshStatus(), refreshTree()]);
-  } catch (e) {}
+  } catch (e) { if (e && e.message) addMsg("system", "BLOCKED: " + e.message); }
   $("qarun").disabled = false;
 };
 $("qapass").onclick = async () => {
@@ -241,17 +241,23 @@ $("qapass").onclick = async () => {
       body: JSON.stringify({source: $("source").value})});
     addMsg("system", `QA PASSED for ${r.source_id}`);
     refreshStatus();
-  } catch (e) {}
+  } catch (e) { if (e && e.message) addMsg("system", "BLOCKED: " + e.message); }
 };
 $("qawaive").onclick = async () => {
+  let reason = $("waivereason").value.trim();
+  if (reason.length < 10) {
+    reason = (window.prompt("Waiver reason (min 10 characters):", reason) || "").trim();
+    if (!reason) return;
+    $("waivereason").value = reason;
+  }
   try {
     const r = await api("/api/qa/waive", {method: "POST",
       body: JSON.stringify({source: $("source").value,
-                            reason: $("waivereason").value})});
+                            reason: reason})});
     addMsg("system", `QA WAIVED for ${r.source_id}`);
     $("waivereason").value = "";
     refreshStatus();
-  } catch (e) {}
+  } catch (e) { if (e && e.message) addMsg("system", "BLOCKED: " + e.message); }
 };
 
 /* ---------- first-run create ---------- */
@@ -267,7 +273,7 @@ $("np_create").onclick = async () => {
     await api("/api/source", {method: "POST", body: JSON.stringify({
       source_id: sid, modelling_profile: $("np_profile").value})});
     await boot();
-  } catch (e) {}
+  } catch (e) { if (e && e.message) addMsg("system", "BLOCKED: " + e.message); }
   $("np_create").disabled = false;
 };
 
@@ -282,6 +288,6 @@ async function boot() {
     await refreshStatus();
     await refreshTree();
     await refreshThread();
-  } catch (e) {}
+  } catch (e) { if (e && e.message) addMsg("system", "BLOCKED: " + e.message); }
 }
 boot();

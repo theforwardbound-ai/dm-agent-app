@@ -44,6 +44,7 @@ def run_qa(pid, user, mode="GATE", source_id=None, artifact=None) -> dict:
         all_ds, lines = [], []
         for s in srcs:
             sid = s["source_id"]
+            state.supersede_open_defects(pid, sid)
             v, arts = _latest_stage2(ws, sid)
             ds = checks.run_static(arts, only=artifact)
             for d in ds:

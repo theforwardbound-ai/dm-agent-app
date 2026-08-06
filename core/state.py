@@ -292,6 +292,11 @@ def waive_defects(pid, source_id, reason):
                "resolved_at=? WHERE project_id=? AND source_id=? AND "
                "status='OPEN'", (reason, db.now(), pid, source_id))
 
+def supersede_open_defects(pid, source_id):
+    db.execute("UPDATE defects SET status='FIXED', resolved_at=? "
+               "WHERE project_id=? AND source_id=? AND status='OPEN'",
+               (db.now(), pid, source_id))
+
 def record_unknown(pid, source_id, question, owner=None):
     db.execute("INSERT INTO unknowns(id,project_id,source_id,tenant,question,"
                "owner,status,created_at) VALUES(?,?,?,?,?,?,?,?)",
