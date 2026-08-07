@@ -6,12 +6,23 @@ env:
     value: "0"
   - name: "DM_MODEL_FRONTIER"
     value: "databricks-gpt-oss-120b"
+  # Pinned explicitly so the standard tier cannot fall back to the Claude
+  # default in core/config.py, which this workspace does not serve.
+  - name: "DM_MODEL_STANDARD"
+    value: "databricks-gpt-oss-120b"
   - name: "DM_MAX_TOKENS"
     value: "8000"
   - name: "DM_FILES_VOLUME"
     value: "/Volumes/workspace/dm_agent/files"
   - name: "DM_MAKER_EMAILS"
     value: "forwardboundconsulting@gmail.com"
+  # Runs execute on these threads, off the request thread. On boot the worker
+  # requeues anything a previous container left QUEUED or RUNNING, so an app
+  # restart or the 24h auto-stop resumes mid-loop instead of losing the run.
+  - name: "DM_WORKER_THREADS"
+    value: "2"
+  - name: "DM_WORKER_RESUME"
+    value: "1"
   - name: "MLFLOW_TRACKING_URI"
     value: "databricks"
   - name: "MLFLOW_EXPERIMENT"

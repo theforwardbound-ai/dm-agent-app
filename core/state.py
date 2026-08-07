@@ -32,6 +32,14 @@ DDL = [
  trace_id TEXT, tokens_in INTEGER, tokens_out INTEGER,
  started_at TIMESTAMP, finished_at TIMESTAMP, error TEXT,
  output_paths TEXT)""",
+"""CREATE TABLE IF NOT EXISTS run_events(
+ run_id TEXT NOT NULL, seq INTEGER NOT NULL, project_id TEXT, tenant TEXT,
+ kind TEXT NOT NULL, name TEXT, payload TEXT, created_at TIMESTAMP,
+ PRIMARY KEY(run_id, seq))""",
+"""CREATE TABLE IF NOT EXISTS run_checkpoints(
+ run_id TEXT PRIMARY KEY, project_id TEXT, loop_iter INTEGER DEFAULT 0,
+ messages TEXT, tool_log TEXT, tokens_in INTEGER DEFAULT 0,
+ tokens_out INTEGER DEFAULT 0, updated_at TIMESTAMP)""",
 """CREATE TABLE IF NOT EXISTS gate_log(
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, source_id TEXT,
  tenant TEXT, gate_name TEXT NOT NULL, decision TEXT DEFAULT 'CONFIRMED',
@@ -220,21 +228,104 @@ def set_qa(pid, source_id, status):
     upsert_source(pid, source_id, qa_status=status)
 
 # ---------- runs (one active per project) ----------
-def claim_run(pid, task_type, user, source_id=None) -> str:
+# A run is durable and outlives the HTTP request that started it. QUEUED and
+# WAITING_INPUT count as active so the one-active-run rule still holds while
+# a run is waiting for a worker slot or for the user to answer a question.
+ACTIVE_RUN_STATES = ("QUEUED", "RUNNING", "WAITING_INPUT")
+TERMINAL_RUN_STATES = ("SUCCEEDED", "FAILED", "CANCELLED")
+
+def claim_run(pid, task_type, user, source_id=None, status="RUNNING") -> str:
     rid = _id()
     tenant = project_tenant(pid)
+    marks = ",".join("?" for _ in ACTIVE_RUN_STATES)
     with db.tx() as t:
-        active = t.q("SELECT run_id FROM runs WHERE project_id=? AND "
-                     "status='RUNNING'", (pid,))
+        active = t.q(f"SELECT run_id FROM runs WHERE project_id=? AND "
+                     f"status IN ({marks})", (pid,) + ACTIVE_RUN_STATES)
         if active:
             raise Conflict(f"run {active[0]['run_id'][:8]} is already active "
                            "on this project — one active run per project")
         t.run("INSERT INTO runs(run_id,project_id,source_id,tenant,task_type,"
               "status,invoked_by,agent_version,started_at) "
               "VALUES(?,?,?,?,?,?,?,?,?)",
-              (rid, pid, source_id, tenant, task_type, "RUNNING", user,
+              (rid, pid, source_id, tenant, task_type, status, user,
                config.AGENT_VERSION, db.now()))
     return rid
+
+def get_run(rid: str) -> dict:
+    r = db.query("SELECT * FROM runs WHERE run_id=?", (rid,))
+    if not r: raise NotFound(f"run {rid}")
+    return r[0]
+
+def set_run_status(rid: str, status: str, error: str | None = None):
+    db.execute("UPDATE runs SET status=?, error=? WHERE run_id=?",
+               (status, error, rid))
+
+def active_run(pid: str) -> dict | None:
+    marks = ",".join("?" for _ in ACTIVE_RUN_STATES)
+    rows = db.query(f"SELECT * FROM runs WHERE project_id=? AND "
+                    f"status IN ({marks}) ORDER BY started_at DESC",
+                    (pid,) + ACTIVE_RUN_STATES)
+    return rows[0] if rows else None
+
+def resumable_runs() -> list[dict]:
+    """Runs the worker should pick back up after a restart or auto-stop."""
+    marks = ",".join("?" for _ in ("QUEUED", "RUNNING"))
+    return db.query(f"SELECT * FROM runs WHERE status IN ({marks}) "
+                    "ORDER BY started_at", ("QUEUED", "RUNNING"))
+
+# ---------- run events (append-only; drives the live UI and the audit trail)
+def append_event(rid: str, kind: str, name: str | None = None,
+                 payload=None, pid: str | None = None) -> int:
+    """Append one step of the Investigation Loop. Returns its seq number."""
+    body = payload if isinstance(payload, str) or payload is None \
+           else json.dumps(payload, default=str)
+    # db's lock is NOT reentrant: resolve the tenant before opening the tx,
+    # or the nested query deadlocks against the lock we are about to take.
+    tenant = project_tenant(pid) if pid else None
+    with db.tx() as t:
+        r = t.q("SELECT MAX(seq) AS s FROM run_events WHERE run_id=?", (rid,))
+        seq = (r[0]["s"] or 0) + 1
+        t.run("INSERT INTO run_events(run_id,seq,project_id,tenant,kind,name,"
+              "payload,created_at) VALUES(?,?,?,?,?,?,?,?)",
+              (rid, seq, pid, tenant, kind, name, body, db.now()))
+    return seq
+
+def list_events(rid: str, since: int = 0, limit: int = 1000) -> list[dict]:
+    return db.query("SELECT * FROM run_events WHERE run_id=? AND seq>? "
+                    "ORDER BY seq LIMIT ?", (rid, since, limit))
+
+# ---------- run checkpoints (one row per run; enables mid-loop resume) ------
+def save_checkpoint(rid, pid, loop_iter, messages, tool_log, tokens_in,
+                    tokens_out):
+    payload = (json.dumps(messages, default=str),
+               json.dumps(tool_log, default=str))
+    with db.tx() as t:
+        exists = t.q("SELECT run_id FROM run_checkpoints WHERE run_id=?",
+                     (rid,))
+        if exists:
+            t.run("UPDATE run_checkpoints SET loop_iter=?, messages=?, "
+                  "tool_log=?, tokens_in=?, tokens_out=?, updated_at=? "
+                  "WHERE run_id=?",
+                  (loop_iter, payload[0], payload[1], tokens_in, tokens_out,
+                   db.now(), rid))
+        else:
+            t.run("INSERT INTO run_checkpoints(run_id,project_id,loop_iter,"
+                  "messages,tool_log,tokens_in,tokens_out,updated_at) "
+                  "VALUES(?,?,?,?,?,?,?,?)",
+                  (rid, pid, loop_iter, payload[0], payload[1], tokens_in,
+                   tokens_out, db.now()))
+
+def load_checkpoint(rid: str) -> dict | None:
+    r = db.query("SELECT * FROM run_checkpoints WHERE run_id=?", (rid,))
+    if not r:
+        return None
+    row = dict(r[0])
+    row["messages"] = json.loads(row["messages"] or "[]")
+    row["tool_log"] = json.loads(row["tool_log"] or "[]")
+    return row
+
+def clear_checkpoint(rid: str):
+    db.execute("DELETE FROM run_checkpoints WHERE run_id=?", (rid,))
 
 def finish_run(rid, status, output_paths=None, error=None, trace_id=None,
                tokens_in=None, tokens_out=None, prompt_versions=None):

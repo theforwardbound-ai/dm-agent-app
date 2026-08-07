@@ -99,18 +99,34 @@ def make_dispatcher(ws, pid: str, source_id: str | None, budget: ToolBudget):
                     if len(hits) >= max_hits:
                         return budget.charge("\n".join(hits))
         return budget.charge("\n".join(hits) or "(no matches)")
-    def read_sheet(path: str, sheet: str = "", max_rows: int = 40):
+    def read_sheet(path: str, sheet: str = "", max_rows: int = 200):
         from openpyxl import load_workbook
         wb = load_workbook(io.BytesIO(ws.download(path)), read_only=True,
                            data_only=True)
         names = wb.sheetnames
-        sh = wb[sheet] if sheet and sheet in names else wb[names[0]]
-        out = [f"sheets: {', '.join(names)}", f"reading: {sh.title}"]
-        for i, row in enumerate(sh.iter_rows(values_only=True), 1):
-            out.append(" | ".join("" if c is None else str(c) for c in row))
-            if i >= max(1, min(max_rows, 200)):
-                break
-        return budget.charge("\n".join(out))
+        # Never silently substitute a different sheet: a wrong guess that
+        # quietly returns other data is how a model ends up confidently
+        # modelling something it never read.
+        if sheet and sheet not in names:
+            return (f"[no sheet named '{sheet}' in {path}] "
+                    f"available sheets: {', '.join(names)}. "
+                    "Call read_sheet again with one of these, or omit sheet "
+                    "to read the first.")
+        sh = wb[sheet] if sheet else wb[names[0]]
+        cap = max(1, min(max_rows, 500))
+        body, total = [], 0
+        for row in sh.iter_rows(values_only=True):
+            total += 1
+            if total <= cap:
+                body.append(" | ".join("" if c is None else str(c)
+                                       for c in row))
+        head = [f"sheets: {', '.join(names)}",
+                f"reading: {sh.title} ({total} rows)"]
+        if total > cap:
+            head.append(f"[TRUNCATED: showing {cap} of {total} rows — call "
+                        f"read_sheet again with max_rows={min(total, 500)} to "
+                        "see the rest before you model anything]")
+        return budget.charge("\n".join(head + body))
     def get_state(section: str):
         s = section.lower()
         if s == "project":
@@ -133,6 +149,40 @@ def make_dispatcher(ws, pid: str, source_id: str | None, budget: ToolBudget):
     return {"list_files": list_files, "read_file": read_file,
             "search_files": search_files, "read_sheet": read_sheet,
             "get_state": get_state, "record_unknown": record_unknown}
+
+def content_text(content) -> str:
+    """Normalise assistant content to a string.
+
+    Reasoning models (gpt-oss, and Claude with thinking enabled) return a
+    LIST of content blocks rather than a string. Prefer real text blocks;
+    fall back to reasoning summaries only if there is no text at all, so an
+    iteration never silently returns empty."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return str(content)
+    text, reasoning = [], []
+    for b in content:
+        if isinstance(b, str):
+            text.append(b)
+            continue
+        if not isinstance(b, dict):
+            continue
+        kind = b.get("type")
+        if kind in ("text", "output_text") and b.get("text"):
+            text.append(b["text"])
+        elif kind in ("reasoning", "thinking"):
+            for s in b.get("summary") or []:
+                if isinstance(s, dict) and s.get("text"):
+                    reasoning.append(s["text"])
+            if b.get("thinking"):
+                reasoning.append(b["thinking"])
+        elif b.get("text"):
+            text.append(b["text"])
+    return "\n".join(text) if text else "\n".join(reasoning)
+
 
 # ---------------- LLM client: three paths ----------------
 class LLM:
@@ -167,7 +217,7 @@ class LLM:
 
     def _from_openai(self, r):
         m = r.choices[0].message
-        msg = {"content": m.content or ""}
+        msg = {"content": content_text(m.content)}
         if getattr(m, "tool_calls", None):
             msg["tool_calls"] = [
                 {"id": tc.id, "name": tc.function.name,
@@ -191,7 +241,7 @@ class LLM:
         with urllib.request.urlopen(req, timeout=600) as resp:
             body = json.loads(resp.read().decode())
         ch = body["choices"][0]["message"]
-        msg = {"content": ch.get("content") or ""}
+        msg = {"content": content_text(ch.get("content"))}
         if ch.get("tool_calls"):
             msg["tool_calls"] = [
                 {"id": t["id"], "name": t["function"]["name"],

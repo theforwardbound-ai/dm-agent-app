@@ -3,7 +3,7 @@ Binds DATABRICKS_APP_PORT on the platform, DM_SERVER_PORT locally.
 Identity: X-Forwarded-Email (Apps-injected) else DM_DEV_USER."""
 import io, json, mimetypes, pathlib, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from core import config, state
+from core import config, state, worker
 from ui.backend import LocalBackend, UiError, resolve_user
 
 STATIC = pathlib.Path(__file__).parent / "static"
@@ -62,6 +62,12 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/api/defects":
                 return self._json(200, self._backend().defects(
                     q.get("source") or None))
+            if u.path == "/api/run":
+                return self._json(200, self._backend().run_status(q["id"]))
+            if u.path == "/api/run/events":
+                return self._json(200, self._backend().run_events(
+                    q["id"], since=int(q.get("since") or 0),
+                    limit=int(q.get("limit") or 500)))
             if u.path == "/api/file":
                 rel = q.get("path", "")
                 data = self._backend().file_bytes(rel)
@@ -104,10 +110,15 @@ class H(BaseHTTPRequestHandler):
                                  body["filename"], body["b64"])
                 return self._json(200, {"stored": p})
             if u.path == "/api/send":
-                return self._json(200, b.send(body.get("source") or None,
-                                              body.get("task", ""),
-                                              body.get("message", ""),
-                                              bool(body.get("chat"))))
+                # wait=False: claim the run, hand it to the worker, return at
+                # once. The client tails /api/run/events from here. A gate
+                # command settles inline and stays 200.
+                r = b.send(body.get("source") or None, body.get("task", ""),
+                           body.get("message", ""), bool(body.get("chat")),
+                           wait=False)
+                return self._json(202 if r.get("kind") == "run" else 200, r)
+            if u.path == "/api/run/cancel":
+                return self._json(200, b.cancel_run(body["id"]))
             if u.path == "/api/qa":
                 return self._json(200, b.qa_run(body.get("mode", "GATE"),
                                                 body.get("source") or None,
@@ -141,9 +152,13 @@ def main():
     except Exception as e:
         print(f"db init FAILED (serving anyway; /healthz reports): {e}",
               flush=True)
+    # Starts the run workers and requeues anything a previous process left
+    # QUEUED or RUNNING. Safe after a failed init: it only reads on demand.
+    worker.start()
     srv = ThreadingHTTPServer(("0.0.0.0", config.SERVER_PORT), H)
     print(f"dm-agent listening on 0.0.0.0:{config.SERVER_PORT} "
-          f"(version {config.AGENT_VERSION})", flush=True)
+          f"(version {config.AGENT_VERSION}, "
+          f"{config.WORKER_THREADS} worker thread(s))", flush=True)
     srv.serve_forever()
 
 if __name__ == "__main__":

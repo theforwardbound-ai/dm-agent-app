@@ -2,7 +2,7 @@
 developer-built UI later — talks only to this class. No HTTP, no HTML
 here. Domain errors wrap into UiError(kind, message)."""
 import base64
-from core import config, state, gates, tasks
+from core import config, state, gates, tasks, worker
 from core.workspace import ProjectWorkspace
 from modeler import runner
 from checker import qa as checker_qa
@@ -121,9 +121,14 @@ class LocalBackend:
 
     @_wrap
     def send(self, source_id: str | None, task_type: str, message: str,
-             chat: bool = False, llm=None) -> dict:
+             chat: bool = False, llm=None, wait: bool = True) -> dict:
         """Gate-or-task routing: a message that IS a gate command records
-        the gate; anything else runs the selected task."""
+        the gate; anything else runs the selected task.
+
+        wait=True executes the run inline and returns the finished result —
+        the path scripts and the golden-path smoke test use. wait=False (what
+        the HTTP layer passes) claims the run, hands it to the worker, and
+        returns immediately so the caller can tail /api/run/events."""
         proj = state.active_project(self.user)
         pid = proj["project_id"]
         g = gates.gate_in_text(message)
@@ -143,9 +148,51 @@ class LocalBackend:
             head, _, rest = msg.partition(" ")
             task_type = tasks.resolve(head)
             message = rest.strip()
-        r = runner.run_task(pid, task_type, self.user, source_id=source_id,
-                            user_message=message, chat=chat, llm=llm)
-        return {"kind": "run", **r}
+        if wait:
+            r = runner.run_task(pid, task_type, self.user, source_id=source_id,
+                                user_message=message, chat=chat, llm=llm)
+            return {"kind": "run", **r}
+        rid = runner.enqueue_task(pid, task_type, self.user,
+                                  source_id=source_id, user_message=message,
+                                  chat=chat)
+        worker.submit(rid)
+        return {"kind": "run", "run_id": rid, "status": "QUEUED"}
+
+    # ---------- run observation (what makes a long run watchable) ----------
+    def _own_run(self, rid: str, min_role: str = "VIEWER") -> dict:
+        run = state.get_run(rid)
+        state.require_member(run["project_id"], self.user, min_role)
+        return run
+
+    @_wrap
+    def run_status(self, rid: str) -> dict:
+        run = self._own_run(rid)
+        return {k: str(v) if v is not None else None for k, v in run.items()}
+
+    @_wrap
+    def run_events(self, rid: str, since: int = 0, limit: int = 500) -> dict:
+        run = self._own_run(rid)
+        evs = state.list_events(rid, since=since, limit=limit)
+        return {"run_id": rid, "status": run["status"],
+                "tokens_in": run.get("tokens_in"),
+                "tokens_out": run.get("tokens_out"),
+                "cursor": evs[-1]["seq"] if evs else since,
+                "done": run["status"] in state.TERMINAL_RUN_STATES,
+                "events": [{"seq": e["seq"], "kind": e["kind"],
+                            "name": e["name"], "payload": e["payload"],
+                            "at": str(e["created_at"])} for e in evs]}
+
+    @_wrap
+    def cancel_run(self, rid: str) -> dict:
+        run = self._own_run(rid, "EDITOR")
+        if run["status"] in state.TERMINAL_RUN_STATES:
+            return {"run_id": rid, "status": run["status"],
+                    "note": "already finished"}
+        state.set_run_status(rid, "CANCELLED")
+        state.append_event(rid, "status", "CANCELLED",
+                           f"cancelled by {self.user}",
+                           pid=run["project_id"])
+        return {"run_id": rid, "status": "CANCELLED"}
 
     # ---------- QA (checker surface) ----------
     @_wrap

@@ -186,6 +186,80 @@ function addMsg(role, content) {
   $("convo").appendChild(d);
   $("convo").scrollTop = $("convo").scrollHeight;
 }
+/* ---------- live run panel ----------
+   A generate run is minutes of tool-calling, not one request. The server
+   returns 202 with a run_id; we tail /api/run/events so the user watches the
+   agent investigate instead of staring at a spinner. */
+const EV_ICON = {iteration: "◷", tool_call: "→", tool_result: "←",
+                 assistant: "💬", artifact: "📦", status: "▸", budget: "⚠"};
+
+function runPanel(rid) {
+  const wrap = document.createElement("div");
+  wrap.className = "m run";
+  wrap.innerHTML = `<div class="who">agent · run ${rid.slice(0, 8)}` +
+    `<span class="runmeta" id="rm-${rid}"></span>` +
+    `<button class="cancelrun" id="rc-${rid}">cancel</button></div>`;
+  const log = document.createElement("div");
+  log.className = "runlog";
+  wrap.appendChild(log);
+  $("convo").appendChild(wrap);
+  $("convo").scrollTop = $("convo").scrollHeight;
+  $(`rc-${rid}`).onclick = async () => {
+    try {
+      await api("/api/run/cancel",
+                {method: "POST", body: JSON.stringify({id: rid})});
+    } catch (e) { /* banner already shown */ }
+  };
+  return {log, meta: $(`rm-${rid}`), btn: $(`rc-${rid}`)};
+}
+
+function evLine(ev) {
+  let p = {};
+  try { p = ev.payload ? JSON.parse(ev.payload) : {}; }
+  catch (e) { p = {raw: ev.payload}; }
+  let text;
+  switch (ev.kind) {
+    case "iteration":
+      text = `iteration ${p.iteration}/${p.max}`; break;
+    case "tool_call":
+      text = `${ev.name}(${JSON.stringify(p.args || {})})`; break;
+    case "tool_result":
+      text = `${ev.name} — ${p.ok ? "ok" : "ERROR"}, ${p.chars || 0} chars\n` +
+             `${p.preview || ""}`; break;
+    case "assistant":
+      text = p.preview || ""; break;
+    case "artifact":
+      text = `${ev.name}: ${p.path || p.skipped || ""}`; break;
+    case "budget":
+      text = `${ev.name} — ${p.note || ""}`; break;
+    default:
+      text = `${ev.name || ""} ${p.raw || ""}`.trim();
+  }
+  const d = document.createElement("div");
+  d.className = "ev ev-" + ev.kind;
+  d.textContent = `${EV_ICON[ev.kind] || "·"} ${text}`;
+  return d;
+}
+
+async function tailRun(rid, panel) {
+  let since = 0, done = false;
+  while (!done) {
+    let page;
+    try { page = await api(`/api/run/events?id=${rid}&since=${since}`); }
+    catch (e) { break; }
+    page.events.forEach(ev => {
+      if (ev.kind !== "params") panel.log.appendChild(evLine(ev));
+    });
+    since = page.cursor;
+    done = page.done;
+    panel.meta.textContent = ` ${page.status}` +
+      (page.tokens_in ? ` · ${page.tokens_in}+${page.tokens_out} tok` : "");
+    $("convo").scrollTop = $("convo").scrollHeight;
+    if (!done) await new Promise(r => setTimeout(r, 1000));
+  }
+  panel.btn.remove();
+}
+
 async function send(chat) {
   let msg = $("msg").value.trim();
   if (msg.startsWith("/") && STATUS) {
@@ -201,14 +275,18 @@ async function send(chat) {
     const r = await api("/api/send", {method: "POST", body: JSON.stringify({
       source: $("source").value || null, task: $("task").value,
       message: msg, chat})});
+    $("msg").value = "";
     if (r.kind === "gate") {
       addMsg("system", `✔ ${r.gate} — ${r.effect}`);
     } else {
-      addMsg("assistant", r.assistant || "(empty)");
-      if (r.outputs && r.outputs.length)
-        addMsg("system", "outputs:\n" + r.outputs.join("\n"));
+      await tailRun(r.run_id, runPanel(r.run_id));
+      // append the durable assistant turn without repainting the thread, so
+      // the investigation log stays on screen next to its conclusion
+      const rows = await api(`/api/thread?stage=${CURRENT_STAGE}` +
+        `&source=${encodeURIComponent($("source").value || "")}`);
+      const last = rows.filter(m => m.role === "assistant").pop();
+      if (last) addMsg("assistant", last.content);
     }
-    $("msg").value = "";
     await Promise.all([refreshStatus(), refreshTree()]);
   } catch (e) { if (e && e.message) addMsg("system", "BLOCKED: " + e.message); }
   $("discuss").disabled = $("generate").disabled = false;

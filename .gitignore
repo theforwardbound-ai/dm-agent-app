@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+
+.venv/
+venv/
+
+# local dev scratch: duckdb state, project workspace, generated extracts
+.local/
+*.duckdb
+*.duckdb.wal
+bank_data/
+
+.env
